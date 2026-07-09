@@ -83,7 +83,8 @@ impl BossPatcherApp {
 
         let window = match WebviewWindowBuilder::new(&handle, "main", window_url)
             .title(&config.title)
-            .inner_size(1280.0, 800.0)
+            .inner_size(config.window.width, config.window.height)
+            .resizable(config.window.resizable)
             .center()
             .visible(true)
             .build()

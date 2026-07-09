@@ -15,9 +15,57 @@ pub struct Config {
     pub data_url: String,
     pub calls: HashMap<String, String>,
     #[serde(default)]
+    pub call_options: HashMap<String, CallOptions>,
+    #[serde(default)]
+    pub window: WindowConfig,
+    #[serde(default)]
     pub patch: PatchConfig,
     #[serde(default)]
     pub security: SecurityConfig,
+}
+
+impl Config {
+    pub fn call_options_for(&self, alias: &str) -> CallOptions {
+        self.call_options.get(alias).cloned().unwrap_or_default()
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+pub struct CallOptions {
+    #[serde(default)]
+    pub elevated: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct WindowConfig {
+    #[serde(default = "default_window_width")]
+    pub width: f64,
+    #[serde(default = "default_window_height")]
+    pub height: f64,
+    #[serde(default = "default_window_resizable")]
+    pub resizable: bool,
+}
+
+impl Default for WindowConfig {
+    fn default() -> Self {
+        Self {
+            width: default_window_width(),
+            height: default_window_height(),
+            resizable: default_window_resizable(),
+        }
+    }
+}
+
+fn default_window_width() -> f64 {
+    1280.0
+}
+
+fn default_window_height() -> f64 {
+    800.0
+}
+
+fn default_window_resizable() -> bool {
+    true
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -139,6 +187,26 @@ pub async fn validate_config(config: &Config) -> Result<()> {
     for (alias, target) in &config.calls {
         crate::path::validate_alias_target(alias, target)?;
     }
+    for alias in config.call_options.keys() {
+        if !config.calls.contains_key(alias) {
+            return Err(Error::ConfigInvalidField {
+                field: format!("call_options.{alias}"),
+                reason: "call options must reference an alias declared in [calls]".to_string(),
+            });
+        }
+    }
+    if !config.window.width.is_finite() || config.window.width < 320.0 {
+        return Err(Error::ConfigInvalidField {
+            field: "window.width".to_string(),
+            reason: "must be at least 320".to_string(),
+        });
+    }
+    if !config.window.height.is_finite() || config.window.height < 240.0 {
+        return Err(Error::ConfigInvalidField {
+            field: "window.height".to_string(),
+            reason: "must be at least 240".to_string(),
+        });
+    }
     let algo = config.patch.hash_algorithm.to_ascii_lowercase();
     if algo != "md5" {
         return Err(Error::ConfigInvalidField {
@@ -211,9 +279,54 @@ mod tests {
             manifest_url: "https://patch.example.com/manifest.toml".into(),
             data_url: "https://patch.example.com/data/".into(),
             calls: [("game".into(), "Game.exe".into())].into_iter().collect(),
+            call_options: HashMap::new(),
+            window: WindowConfig::default(),
             patch: PatchConfig::default(),
             security: SecurityConfig::default(),
         }
+    }
+
+    #[tokio::test]
+    async fn validate_config_accepts_call_options_and_window() {
+        let contents = r#"
+config_version = 1
+title = "BossPatcher Launcher"
+launcher_url = "https://launcher.example.com/"
+manifest_url = "https://patch.example.com/manifest.toml"
+data_url = "https://patch.example.com/data/"
+
+[calls]
+game = "Game.exe"
+setup = "Setup.exe"
+
+[call_options.game]
+elevated = true
+
+[window]
+width = 960
+height = 540
+resizable = false
+"#;
+
+        let cfg: Config = toml::from_str(contents).unwrap();
+        validate_config(&cfg).await.unwrap();
+
+        assert!(cfg.call_options.get("game").unwrap().elevated);
+        assert!(!cfg.call_options_for("setup").elevated);
+        assert_eq!(cfg.window.width, 960.0);
+        assert_eq!(cfg.window.height, 540.0);
+        assert!(!cfg.window.resizable);
+    }
+
+    #[tokio::test]
+    async fn validate_config_rejects_call_options_for_unknown_alias() {
+        let mut cfg = sample_config();
+        cfg.call_options.insert("missing".into(), CallOptions::default());
+
+        assert!(matches!(
+            validate_config(&cfg).await.unwrap_err(),
+            Error::ConfigInvalidField { field, .. } if field == "call_options.missing"
+        ));
     }
 
     #[test]

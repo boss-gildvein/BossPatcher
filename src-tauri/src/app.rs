@@ -18,7 +18,10 @@ impl BossPatcherApp {
         let exe_path = match resolve_exe_path() {
             Ok(p) => p,
             Err(e) => {
-                show_fatal_error(&handle, &format!("Failed to resolve executable path: {}", e));
+                show_fatal_error(
+                    &handle,
+                    &format!("Failed to resolve executable path: {}", e),
+                );
                 return;
             }
         };
@@ -70,18 +73,20 @@ impl BossPatcherApp {
             }
         };
 
-        let window = match WebviewWindowBuilder::new(
-            &handle,
-            "main",
+        let window_url = if config.launcher_url.starts_with("https://tauri.localhost") {
+            WebviewUrl::App("index.html".into())
+        } else {
             WebviewUrl::External(Url::parse(&config.launcher_url).unwrap_or_else(|_| {
-                Url::parse("https://localhost").expect("localhost url is valid")
-            })),
-        )
-        .title(&config.title)
-        .inner_size(1280.0, 800.0)
-        .center()
-        .visible(true)
-        .build()
+                Url::parse("http://localhost").expect("localhost url is valid")
+            }))
+        };
+
+        let window = match WebviewWindowBuilder::new(&handle, "main", window_url)
+            .title(&config.title)
+            .inner_size(1280.0, 800.0)
+            .center()
+            .visible(true)
+            .build()
         {
             Ok(w) => w,
             Err(e) => {
@@ -103,16 +108,15 @@ fn show_fatal_error(handle: &AppHandle, message: &str) {
     // and leave the app running with a blank window.
 }
 
-fn resolve_exe_path() -> std::io::Result<PathBuf> {
+pub fn resolve_exe_path() -> std::io::Result<PathBuf> {
     #[cfg(windows)]
     {
         use std::ffi::OsString;
         use std::os::windows::ffi::OsStringExt;
         use windows_sys::Win32::System::LibraryLoader::GetModuleFileNameW;
         let mut buf = vec![0u16; 4096];
-        let len = unsafe {
-            GetModuleFileNameW(std::ptr::null_mut(), buf.as_mut_ptr(), buf.len() as u32)
-        };
+        let len =
+            unsafe { GetModuleFileNameW(std::ptr::null_mut(), buf.as_mut_ptr(), buf.len() as u32) };
         if len == 0 {
             return Err(std::io::Error::last_os_error());
         }
@@ -126,6 +130,8 @@ fn resolve_exe_path() -> std::io::Result<PathBuf> {
 }
 
 /// Get a reference to the managed app state.
-pub fn app_state<R: tauri::Runtime>(handle: &tauri::AppHandle<R>) -> tauri::State<'_, BossPatcherApp> {
+pub fn app_state<R: tauri::Runtime>(
+    handle: &tauri::AppHandle<R>,
+) -> tauri::State<'_, BossPatcherApp> {
     handle.state::<BossPatcherApp>()
 }

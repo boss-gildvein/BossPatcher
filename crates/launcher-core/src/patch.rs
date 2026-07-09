@@ -86,13 +86,10 @@ impl Patcher {
             }
         }
 
-        emitter
-            .lock()
-            .await
-            .emit_checking(PatchChecking {
-                checked_files: 0,
-                total_files: entries.len(),
-            });
+        emitter.lock().await.emit_checking(PatchChecking {
+            checked_files: 0,
+            total_files: entries.len(),
+        });
 
         let plan = PatchPlan::build(launcher_dir, &entries).await?;
         let protected_skipped = filtered.len() - entries.len();
@@ -134,18 +131,15 @@ impl Patcher {
                         total_downloaded += bytes;
                         if total_downloaded.saturating_sub(last_emitted_total) >= 64 * 1024 {
                             last_emitted_total = total_downloaded;
-                            emitter
-                                .lock()
-                                .await
-                                .emit_file_progress(PatchFileProgress {
-                                    path: path.clone(),
-                                    file_index,
-                                    file_total,
-                                    file_downloaded_bytes: file_downloaded,
-                                    file_total_bytes,
-                                    total_downloaded_bytes: total_downloaded,
-                                    total_bytes,
-                                });
+                            emitter.lock().await.emit_file_progress(PatchFileProgress {
+                                path: path.clone(),
+                                file_index,
+                                file_total,
+                                file_downloaded_bytes: file_downloaded,
+                                file_total_bytes,
+                                total_downloaded_bytes: total_downloaded,
+                                total_bytes,
+                            });
                         }
                     }
                     total_downloaded
@@ -208,8 +202,12 @@ pub struct ProgressTracker {
 
 impl DownloadProgress for ProgressTracker {
     fn on_bytes(&mut self, bytes: u64) {
-        self.file_downloaded_bytes.fetch_add(bytes, Ordering::Relaxed);
-        let total = self.total_downloaded_bytes.fetch_add(bytes, Ordering::Relaxed) + bytes;
+        self.file_downloaded_bytes
+            .fetch_add(bytes, Ordering::Relaxed);
+        let total = self
+            .total_downloaded_bytes
+            .fetch_add(bytes, Ordering::Relaxed)
+            + bytes;
         // Throttle emits to every 64 KiB to avoid flooding the UI.
         let last = self.last_emit.load(Ordering::Relaxed);
         if total.saturating_sub(last) > 64 * 1024 {

@@ -16,6 +16,8 @@ pub struct Config {
     pub calls: HashMap<String, String>,
     #[serde(default)]
     pub patch: PatchConfig,
+    #[serde(default)]
+    pub security: SecurityConfig,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -57,23 +59,39 @@ fn default_hash_algorithm() -> String {
     "md5".into()
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct SecurityConfig {
+    #[serde(default = "default_allow_http")]
+    pub allow_http: bool,
+}
+
+impl Default for SecurityConfig {
+    fn default() -> Self {
+        Self {
+            allow_http: default_allow_http(),
+        }
+    }
+}
+
+fn default_allow_http() -> bool {
+    false
+}
+
 /// Resolve the config path from the running executable path.
 /// `exe_path` should be the absolute path to the launcher executable.
 pub fn derive_config_path<P: AsRef<Path>>(exe_path: P) -> Result<PathBuf> {
     let exe = exe_path.as_ref();
-    let dir = exe
-        .parent()
-        .ok_or_else(|| Error::ConfigInvalidField {
-            field: "exe_path".to_string(),
-            reason: "executable path has no parent directory".to_string(),
-        })?;
-    let file_stem = exe
-        .file_stem()
-        .and_then(|s| s.to_str())
-        .ok_or_else(|| Error::ConfigInvalidField {
-            field: "exe_path".to_string(),
-            reason: "executable filename is not valid UTF-8".to_string(),
-        })?;
+    let dir = exe.parent().ok_or_else(|| Error::ConfigInvalidField {
+        field: "exe_path".to_string(),
+        reason: "executable path has no parent directory".to_string(),
+    })?;
+    let file_stem =
+        exe.file_stem()
+            .and_then(|s| s.to_str())
+            .ok_or_else(|| Error::ConfigInvalidField {
+                field: "exe_path".to_string(),
+                reason: "executable filename is not valid UTF-8".to_string(),
+            })?;
     Ok(dir.join(format!("{file_stem}.toml")))
 }
 
@@ -93,11 +111,7 @@ pub async fn load_config<P: AsRef<Path>>(path: P) -> Result<Config> {
         }
     })?;
     let config: Config = toml::from_str(&contents).map_err(|e| {
-        Error::ConfigParseFailed(format!(
-            "{}: {}",
-            path.display(),
-            e.message().to_string()
-        ))
+        Error::ConfigParseFailed(format!("{}: {}", path.display(), e.message().to_string()))
     })?;
     validate_config(&config).await?;
     Ok(config)
@@ -115,9 +129,10 @@ pub async fn validate_config(config: &Config) -> Result<()> {
             field: "title".to_string(),
         });
     }
-    validate_url(&config.launcher_url, "launcher_url", true)?;
-    validate_url(&config.manifest_url, "manifest_url", false)?;
-    validate_url(&config.data_url, "data_url", false)?;
+    let require_https = !config.security.allow_http;
+    validate_url(&config.launcher_url, "launcher_url", require_https)?;
+    validate_url(&config.manifest_url, "manifest_url", require_https)?;
+    validate_url(&config.data_url, "data_url", require_https)?;
     if config.calls.is_empty() {
         return Err(Error::CallsMissing);
     }
@@ -197,6 +212,7 @@ mod tests {
             data_url: "https://patch.example.com/data/".into(),
             calls: [("game".into(), "Game.exe".into())].into_iter().collect(),
             patch: PatchConfig::default(),
+            security: SecurityConfig::default(),
         }
     }
 
@@ -229,9 +245,22 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn validate_config_accepts_http_when_allowed() {
+        let mut cfg = sample_config();
+        cfg.launcher_url = "http://launcher.example.com/".into();
+        cfg.manifest_url = "http://patch.example.com/manifest.toml".into();
+        cfg.data_url = "http://patch.example.com/data/".into();
+        cfg.security.allow_http = true;
+        validate_config(&cfg).await.unwrap();
+    }
+
+    #[tokio::test]
     async fn validate_config_rejects_empty_calls() {
         let mut cfg = sample_config();
         cfg.calls.clear();
-        assert!(matches!(validate_config(&cfg).await.unwrap_err(), Error::CallsMissing));
+        assert!(matches!(
+            validate_config(&cfg).await.unwrap_err(),
+            Error::CallsMissing
+        ));
     }
 }

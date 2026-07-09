@@ -3,28 +3,149 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>BossPatcher UI Stub</title>
+  <title>BossPatcher Test UI</title>
   <style>
-    body { font-family: system-ui, sans-serif; padding: 2rem; }
-    h1 { font-size: 1.5rem; }
-    .error { color: #c00; }
+    body { font-family: system-ui, sans-serif; padding: 2rem; background: #111; color: #eee; }
+    h1 { margin-top: 0; }
+    button { padding: 0.75rem 1.5rem; margin-right: 0.5rem; font-size: 1rem; cursor: pointer; }
+    .progress { margin: 1rem 0; max-width: 720px; }
+    .progress label { display: block; margin-top: 0.75rem; }
+    progress { width: 100%; height: 24px; }
+    #log { margin-top: 1rem; padding: 1rem; background: #1a1a1a; border: 1px solid #333; min-height: 200px; white-space: pre-wrap; }
   </style>
 </head>
 <body>
-  <h1>BossPatcher Frontend Contract</h1>
-  <p id="status">Loading...</p>
-  <div id="error" class="error"></div>
-  <script type="module" src="./api.js"></script>
-  <script type="module">
-    import { getStatus, onFatalError } from './api.js';
-    onFatalError((msg) => {
-      document.getElementById('error').textContent = msg;
-    });
-    getStatus().then((s) => {
-      document.getElementById('status').textContent = JSON.stringify(s, null, 2);
-    }).catch((e) => {
-      document.getElementById('error').textContent = String(e);
-    });
+  <h1>BossPatcher Contract UI</h1>
+  <p id="status">Idle</p>
+  <button id="patchBtn">Patch</button>
+  <button id="playBtn">Play</button>
+  <button id="exitBtn">Exit</button>
+  <div class="progress">
+    <label for="totalProgress"><strong>Total progress</strong></label>
+    <progress id="totalProgress" value="0" max="100"></progress>
+    <div id="totalProgressText">0% (0 B / 0 B)</div>
+    <div id="fileCountText">Files: 0 / 0</div>
+
+    <label for="fileProgress"><strong>Current file</strong></label>
+    <progress id="fileProgress" value="0" max="100"></progress>
+    <div id="fileProgressText">0% (0 B / 0 B)</div>
+    <div id="currentFile"></div>
+  </div>
+  <div id="log"></div>
+
+  <script>
+    const invoke = window.__TAURI__?.core?.invoke || window.__TAURI_INTERNALS__?.invoke;
+    const listen = window.__TAURI__?.event?.listen || window.__TAURI_INTERNALS__?.listen;
+    const log = (msg) => document.getElementById("log").textContent += msg + "\n";
+    const totalProgress = document.getElementById("totalProgress");
+    const totalProgressText = document.getElementById("totalProgressText");
+    const fileCountText = document.getElementById("fileCountText");
+    const fileProgress = document.getElementById("fileProgress");
+    const fileProgressText = document.getElementById("fileProgressText");
+    const currentFile = document.getElementById("currentFile");
+    let totalFilesToPatch = 0;
+    let completedFiles = 0;
+
+    const formatBytes = (bytes) => {
+      if (!bytes) return "0 B";
+      const units = ["B", "KiB", "MiB", "GiB"];
+      const index = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1);
+      return (bytes / Math.pow(1024, index)).toFixed(index === 0 ? 0 : 1) + " " + units[index];
+    };
+    const percent = (downloaded, total) => total > 0 ? Math.min(100, Math.round((downloaded / total) * 100)) : 0;
+    const setTotalProgress = (downloaded, total) => {
+      const pct = percent(downloaded, total);
+      totalProgress.value = pct;
+      totalProgressText.textContent = `${pct}% (${formatBytes(downloaded)} / ${formatBytes(total)})`;
+    };
+    const setFileProgress = (downloaded, total) => {
+      const pct = percent(downloaded, total);
+      fileProgress.value = pct;
+      fileProgressText.textContent = `${pct}% (${formatBytes(downloaded)} / ${formatBytes(total)})`;
+    };
+    const setFileCount = (completed, total) => {
+      fileCountText.textContent = `Files: ${completed} / ${total}`;
+    };
+    const resetProgress = () => {
+      totalFilesToPatch = 0;
+      completedFiles = 0;
+      setTotalProgress(0, 0);
+      setFileProgress(0, 0);
+      setFileCount(0, 0);
+      currentFile.textContent = "";
+    };
+
+    if (listen) {
+      listen("patch:plan-ready", (event) => {
+        totalFilesToPatch = event.payload.files_to_download || 0;
+        completedFiles = 0;
+        setTotalProgress(0, event.payload.bytes_to_download || 0);
+        setFileProgress(0, 0);
+        setFileCount(completedFiles, totalFilesToPatch);
+        log(`Plan ready: ${totalFilesToPatch} files, ${formatBytes(event.payload.bytes_to_download)}`);
+      });
+      listen("patch:file-started", (event) => {
+        setFileProgress(0, event.payload.file_size || 0);
+        setFileCount(completedFiles, totalFilesToPatch || event.payload.file_total || 0);
+        currentFile.textContent = `Downloading ${event.payload.file_index}/${event.payload.file_total}: ${event.payload.path}`;
+      });
+      listen("patch:file-progress", (event) => {
+        setTotalProgress(event.payload.total_downloaded_bytes, event.payload.total_bytes);
+        setFileProgress(event.payload.file_downloaded_bytes, event.payload.file_total_bytes);
+        setFileCount(completedFiles, totalFilesToPatch || event.payload.file_total || 0);
+        currentFile.textContent = `Downloading ${event.payload.file_index}/${event.payload.file_total}: ${event.payload.path}`;
+      });
+      listen("patch:file-completed", (event) => {
+        completedFiles = Math.max(completedFiles + 1, event.payload.file_index || 0);
+        setFileProgress(100, 100);
+        setFileCount(completedFiles, totalFilesToPatch || event.payload.file_total || 0);
+        log(`File completed: ${event.payload.path}`);
+      });
+      listen("patch:warning", (event) => log("Patch warning: " + JSON.stringify(event.payload)));
+      listen("patch:error", (event) => log("Patch error event: " + JSON.stringify(event.payload)));
+      listen("patch:completed", (event) => {
+        setTotalProgress(event.payload.bytes_downloaded, event.payload.bytes_downloaded);
+        setFileProgress(100, 100);
+        setFileCount(event.payload.files_patched, event.payload.files_to_patch);
+        currentFile.textContent = "Patch completed";
+        log("Patch completed: " + JSON.stringify(event.payload));
+      });
+    }
+
+    document.getElementById("patchBtn").onclick = async () => {
+      resetProgress();
+      log("Patching...");
+      try {
+        const result = await invoke("patch_files");
+        log("Patch result: " + JSON.stringify(result, null, 2));
+      } catch (e) {
+        log("Patch error: " + JSON.stringify(e));
+      }
+    };
+
+    document.getElementById("playBtn").onclick = async () => {
+      log("Launching game...");
+      try {
+        const result = await invoke("call_alias", { alias: "game" });
+        log("Launch result: " + JSON.stringify(result));
+      } catch (e) {
+        log("Launch error: " + JSON.stringify(e));
+      }
+    };
+
+    document.getElementById("exitBtn").onclick = async () => {
+      log("Exiting...");
+      await invoke("app_exit");
+    };
+
+    (async () => {
+      try {
+        const status = await invoke("get_status");
+        document.getElementById("status").textContent = "Ready — aliases: " + status.aliases.join(", ");
+      } catch (e) {
+        log("Status error: " + JSON.stringify(e));
+      }
+    })();
   </script>
 </body>
 </html>

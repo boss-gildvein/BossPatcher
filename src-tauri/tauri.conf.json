@@ -10,16 +10,8 @@
     "devUrl": "https://localhost:3000"
   },
   "app": {
-    "windows": [
-      {
-        "title": "BossPatcher",
-        "width": 1280,
-        "height": 800,
-        "resizable": true,
-        "fullscreen": false,
-        "visible": false
-      }
-    ],
+    "withGlobalTauri": true,
+    "windows": [],
     "security": {
       "csp": null
     }

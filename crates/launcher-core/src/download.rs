@@ -18,10 +18,12 @@ pub async fn download_file<P: AsRef<Path>>(
     let url = url_path_segment_for_data_url(data_url, manifest_path)?;
     let local_temp = temp_path_for(manifest_path, launcher_dir.as_ref())?;
     if let Some(parent) = local_temp.parent() {
-        tokio::fs::create_dir_all(parent).await.map_err(|e| Error::DownloadFailed {
-            path: manifest_path.to_string(),
-            reason: format!("create dir failed: {}", e),
-        })?;
+        tokio::fs::create_dir_all(parent)
+            .await
+            .map_err(|e| Error::DownloadFailed {
+                path: manifest_path.to_string(),
+                reason: format!("create dir failed: {}", e),
+            })?;
     }
     let file = OpenOptions::new()
         .write(true)
@@ -50,14 +52,10 @@ pub async fn download_file<P: AsRef<Path>>(
         });
     }
 
-    while let Some(chunk) = response
-        .chunk()
-        .await
-        .map_err(|e| Error::DownloadFailed {
-            path: manifest_path.to_string(),
-            reason: format!("chunk error: {}", e),
-        })?
-    {
+    while let Some(chunk) = response.chunk().await.map_err(|e| Error::DownloadFailed {
+        path: manifest_path.to_string(),
+        reason: format!("chunk error: {}", e),
+    })? {
         writer
             .write_all(&chunk)
             .await
@@ -74,15 +72,15 @@ pub async fn download_file<P: AsRef<Path>>(
     drop(writer);
 
     // Verify after download.
-    let actual_hash = md5_file(&local_temp).await.map_err(|e| Error::DownloadFailed {
-        path: manifest_path.to_string(),
-        reason: format!("hash failed: {}", e),
-    })?;
+    let actual_hash = md5_file(&local_temp)
+        .await
+        .map_err(|e| Error::DownloadFailed {
+            path: manifest_path.to_string(),
+            reason: format!("hash failed: {}", e),
+        })?;
     if actual_hash.to_ascii_lowercase() != expected_md5.to_ascii_lowercase() {
         let _ = tokio::fs::remove_file(&local_temp).await;
-        return Err(Error::HashMismatch {
-            path: local_temp,
-        });
+        return Err(Error::HashMismatch { path: local_temp });
     }
 
     Ok(TempVerifiedFile {
@@ -95,25 +93,29 @@ pub async fn download_file<P: AsRef<Path>>(
 pub async fn replace_with_temp(temp: TempVerifiedFile, launcher_dir: &Path) -> Result<()> {
     let target = resolve_relative(launcher_dir, &temp.manifest_path)?;
     if let Some(parent) = target.parent() {
-        tokio::fs::create_dir_all(parent).await.map_err(|e| Error::ReplaceFailed {
-            path: target.clone(),
-            reason: format!("create dir failed: {}", e),
-        })?;
+        tokio::fs::create_dir_all(parent)
+            .await
+            .map_err(|e| Error::ReplaceFailed {
+                path: target.clone(),
+                reason: format!("create dir failed: {}", e),
+            })?;
     }
     // If the target file is locked, the rename will fail and we do not corrupt it.
-    tokio::fs::rename(&temp.temp_path, &target).await.map_err(|e| {
-        if e.kind() == std::io::ErrorKind::PermissionDenied {
-            Error::FileLocked {
-                path: target.clone(),
-                reason: e.to_string(),
+    tokio::fs::rename(&temp.temp_path, &target)
+        .await
+        .map_err(|e| {
+            if e.kind() == std::io::ErrorKind::PermissionDenied {
+                Error::FileLocked {
+                    path: target.clone(),
+                    reason: e.to_string(),
+                }
+            } else {
+                Error::ReplaceFailed {
+                    path: target.clone(),
+                    reason: e.to_string(),
+                }
             }
-        } else {
-            Error::ReplaceFailed {
-                path: target.clone(),
-                reason: e.to_string(),
-            }
-        }
-    })?;
+        })?;
     Ok(())
 }
 

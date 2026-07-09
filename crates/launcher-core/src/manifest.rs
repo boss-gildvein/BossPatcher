@@ -25,7 +25,8 @@ pub struct FileEntry {
 impl Manifest {
     /// Parse a manifest from a TOML string and validate it.
     pub fn from_toml(s: &str) -> Result<Self> {
-        let manifest: Manifest = toml::from_str(s).map_err(|e| Error::ManifestParseFailed(e.to_string()))?;
+        let manifest: Manifest =
+            toml::from_str(s).map_err(|e| Error::ManifestParseFailed(e.to_string()))?;
         manifest.validate()?;
         Ok(manifest)
     }
@@ -53,12 +54,24 @@ impl Manifest {
     }
 
     /// Return file entries in deterministic order, skipping protected files.
-    pub fn entries_excluding_protected<P: AsRef<Path>>(&self, launcher_dir: P, exe_path: P, config_path: P) -> Vec<ProtectedResult<'_>> {
+    pub fn entries_excluding_protected<P: AsRef<Path>>(
+        &self,
+        launcher_dir: P,
+        exe_path: P,
+        config_path: P,
+    ) -> Vec<ProtectedResult<'_>> {
         self.files
             .iter()
-            .filter_map(|entry| match check_protected(entry, launcher_dir.as_ref(), exe_path.as_ref(), config_path.as_ref()) {
-                Ok(()) => Some(ProtectedResult::Ok(entry)),
-                Err(e) => Some(ProtectedResult::Skipped { entry, error: e }),
+            .filter_map(|entry| {
+                match check_protected(
+                    entry,
+                    launcher_dir.as_ref(),
+                    exe_path.as_ref(),
+                    config_path.as_ref(),
+                ) {
+                    Ok(()) => Some(ProtectedResult::Ok(entry)),
+                    Err(e) => Some(ProtectedResult::Skipped { entry, error: e }),
+                }
             })
             .collect()
     }
@@ -76,7 +89,11 @@ pub fn validate_entry_path(path: &str) -> Result<()> {
             reason: "empty path".to_string(),
         });
     }
-    if path.starts_with('/') || path.starts_with("\\") || path.contains(":/") || path.contains(":\\") {
+    if path.starts_with('/')
+        || path.starts_with("\\")
+        || path.contains(":/")
+        || path.contains(":\\")
+    {
         return Err(Error::ManifestInvalidPath {
             path: path.to_string(),
             reason: "absolute path".to_string(),
@@ -111,12 +128,15 @@ fn validate_entry_hash(hash: &str, path: &str) -> Result<()> {
 
 /// Check whether a manifest entry points to a protected file (launcher exe or config).
 /// Returns Ok(()) if safe, Err(ProtectedFileSkipped) if protected.
-pub fn check_protected(entry: &FileEntry, launcher_dir: &Path, exe_path: &Path, config_path: &Path) -> Result<()> {
+pub fn check_protected(
+    entry: &FileEntry,
+    launcher_dir: &Path,
+    exe_path: &Path,
+    config_path: &Path,
+) -> Result<()> {
     let local_path = crate::path::resolve_relative(launcher_dir, &entry.path)?;
     if is_same_file(&local_path, exe_path) || is_same_file(&local_path, config_path) {
-        return Err(Error::ProtectedFileSkipped {
-            path: local_path,
-        });
+        return Err(Error::ProtectedFileSkipped { path: local_path });
     }
     Ok(())
 }

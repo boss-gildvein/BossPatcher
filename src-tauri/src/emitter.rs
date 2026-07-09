@@ -17,13 +17,16 @@ impl TauriPatchEmitter {
 
 impl PatchEmitter for TauriPatchEmitter {
     fn emit_started(&mut self) {
-        let _ = self.window.emit("patch:started", serde_json::json!({"status": "started"}));
+        let _ = self
+            .window
+            .emit("patch:started", serde_json::json!({"status": "started"}));
     }
 
     fn emit_manifest_downloaded(&mut self) {
-        let _ = self
-            .window
-            .emit("patch:manifest-downloaded", serde_json::json!({"status": "manifest-downloaded"}));
+        let _ = self.window.emit(
+            "patch:manifest-downloaded",
+            serde_json::json!({"status": "manifest-downloaded"}),
+        );
     }
 
     fn emit_checking(&mut self, payload: PatchChecking) {

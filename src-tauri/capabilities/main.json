@@ -6,7 +6,11 @@
   "permissions": [
     "core:default",
     "shell:allow-open",
-    "log:default"
+    "log:default",
+    "allow-app-exit",
+    "allow-call-alias",
+    "allow-get-status",
+    "allow-patch-files"
   ],
   "remote": {
     "urls": ["http://localhost:*", "http://127.0.0.1:*", "https://*"]

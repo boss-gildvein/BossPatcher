@@ -9,18 +9,23 @@ pub const HASH_BUF_SIZE: usize = 256 * 1024; // 256 KiB
 /// Stream-compute the MD5 digest of a file.
 pub async fn md5_file<P: AsRef<Path>>(path: P) -> Result<String> {
     let path = path.as_ref();
-    let file = File::open(path).await.map_err(|e| Error::LocalFileReadFailed {
-        path: path.to_path_buf(),
-        reason: e.to_string(),
-    })?;
+    let file = File::open(path)
+        .await
+        .map_err(|e| Error::LocalFileReadFailed {
+            path: path.to_path_buf(),
+            reason: e.to_string(),
+        })?;
     let mut reader = BufReader::new(file);
     let mut hasher = md5::Context::new();
     let mut buf = vec![0u8; HASH_BUF_SIZE];
     loop {
-        let n = reader.read(&mut buf).await.map_err(|e| Error::LocalHashFailed {
-            path: path.to_path_buf(),
-            reason: e.to_string(),
-        })?;
+        let n = reader
+            .read(&mut buf)
+            .await
+            .map_err(|e| Error::LocalHashFailed {
+                path: path.to_path_buf(),
+                reason: e.to_string(),
+            })?;
         if n == 0 {
             break;
         }

@@ -50,7 +50,15 @@ async fn main() -> anyhow::Result<()> {
 
     let mut entries = tokio::fs::read_dir(&folder).await?;
     while let Some(entry) = entries.next_entry().await? {
-        collect_files(&folder, &output, &entry.path(), &mut files, &mut failures, args.verbose).await?;
+        collect_files(
+            &folder,
+            &output,
+            &entry.path(),
+            &mut files,
+            &mut failures,
+            args.verbose,
+        )
+        .await?;
     }
 
     files.sort_by(|a, b| a.path.cmp(&b.path));
@@ -74,7 +82,11 @@ async fn main() -> anyhow::Result<()> {
     tokio::fs::write(&output, toml_string).await?;
 
     if args.verbose {
-        info!("Wrote {} file entries to {}", manifest.files.len(), output.display());
+        info!(
+            "Wrote {} file entries to {}",
+            manifest.files.len(),
+            output.display()
+        );
         if !failures.is_empty() {
             warn!("{} files could not be read", failures.len());
         }
@@ -90,58 +102,70 @@ fn collect_files<'a>(
     failures: &'a mut Vec<(PathBuf, std::io::Error)>,
     verbose: bool,
 ) -> std::pin::Pin<Box<dyn std::future::Future<Output = anyhow::Result<()>> + Send + 'a>> {
-        Box::pin(async move {
-            let abs_current = std::path::absolute(current)?;
+    Box::pin(async move {
+        let abs_current = std::path::absolute(current)?;
 
-    if abs_current == *output_manifest {
-        return Ok(());
-    }
-
-    let metadata = match tokio::fs::metadata(&abs_current).await {
-        Ok(m) => m,
-        Err(e) => {
-            failures.push((abs_current, e));
+        if abs_current == *output_manifest {
             return Ok(());
         }
-    };
 
-    if metadata.is_dir() {
-        let mut entries = tokio::fs::read_dir(&abs_current).await?;
-        while let Some(entry) = entries.next_entry().await? {
-            collect_files(root, output_manifest, &entry.path(), files, failures, verbose).await?;
-        }
-    } else if metadata.is_file() {
-        let rel = match abs_current.strip_prefix(root) {
-            Ok(r) => r,
-            Err(_) => {
-                failures.push((abs_current, std::io::Error::new(std::io::ErrorKind::Other, "outside root")));
-                return Ok(());
-            }
-        };
-        let rel_str = rel
-            .to_string_lossy()
-            .replace("\\", "/");
-        if rel_str.is_empty() {
-            return Ok(());
-        }
-        let md5 = match md5_file(&abs_current).await {
-            Ok(h) => h,
+        let metadata = match tokio::fs::metadata(&abs_current).await {
+            Ok(m) => m,
             Err(e) => {
-                failures.push((abs_current, std::io::Error::new(std::io::ErrorKind::Other, e.to_string())));
+                failures.push((abs_current, e));
                 return Ok(());
             }
         };
-        if verbose {
-            info!("{} ({}, md5: {})", rel_str, metadata.len(), md5);
+
+        if metadata.is_dir() {
+            let mut entries = tokio::fs::read_dir(&abs_current).await?;
+            while let Some(entry) = entries.next_entry().await? {
+                collect_files(
+                    root,
+                    output_manifest,
+                    &entry.path(),
+                    files,
+                    failures,
+                    verbose,
+                )
+                .await?;
+            }
+        } else if metadata.is_file() {
+            let rel = match abs_current.strip_prefix(root) {
+                Ok(r) => r,
+                Err(_) => {
+                    failures.push((
+                        abs_current,
+                        std::io::Error::new(std::io::ErrorKind::Other, "outside root"),
+                    ));
+                    return Ok(());
+                }
+            };
+            let rel_str = rel.to_string_lossy().replace("\\", "/");
+            if rel_str.is_empty() {
+                return Ok(());
+            }
+            let md5 = match md5_file(&abs_current).await {
+                Ok(h) => h,
+                Err(e) => {
+                    failures.push((
+                        abs_current,
+                        std::io::Error::new(std::io::ErrorKind::Other, e.to_string()),
+                    ));
+                    return Ok(());
+                }
+            };
+            if verbose {
+                info!("{} ({}, md5: {})", rel_str, metadata.len(), md5);
+            }
+            files.push(FileEntry {
+                path: rel_str,
+                size: metadata.len(),
+                md5,
+            });
+        } else {
+            // Skip symlinks and special files on Windows.
         }
-        files.push(FileEntry {
-            path: rel_str,
-            size: metadata.len(),
-            md5,
-        });
-    } else {
-        // Skip symlinks and special files on Windows.
-    }
-    Ok(())
+        Ok(())
     })
 }

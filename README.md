@@ -53,6 +53,10 @@ data_url = "https://patch.example.com/data/"
 game = "Game.exe"
 setup = "Setup.exe"
 
+[security]
+# Defaults to false. Use true only for local development fixtures.
+allow_http = false
+
 [patch]
 max_concurrent_downloads = 3
 verify_after_download = true
@@ -71,6 +75,17 @@ hash_algorithm = "md5"
 | `data_url` | HTTPS base URL for patch file downloads |
 | `[calls]` | Alias → relative executable path map |
 
+### Local HTTP opt-in
+
+Production configs must use HTTPS by default. For local manual testing, set:
+
+```toml
+[security]
+allow_http = true
+```
+
+When `allow_http = false` or the section is omitted, any HTTP `launcher_url`, `manifest_url`, or `data_url` fails config validation before the UI or patcher starts. The `--headless-patch` diagnostic mode uses the same TOML validation path as the Tauri app.
+
 ### Security rules enforced by Rust
 
 - Only aliases defined in `[calls]` can be launched. `call("game")` resolves to the configured path; raw paths from JavaScript are rejected.
@@ -78,6 +93,7 @@ hash_algorithm = "md5"
 - Only files listed in the remote manifest can be modified. Extra local files are never deleted.
 - The running launcher executable and its config TOML are protected and skipped with a warning if they appear in the manifest.
 - Absolute manifest paths, traversal, and case-insensitive duplicates are rejected.
+- Remote UI command access is controlled by Tauri v2 capabilities. The app grants only the registered launcher commands (`app_exit`, `call_alias`, `get_status`, `patch_files`) to the configured main remote webview.
 
 ## Frontend JavaScript API
 
@@ -98,9 +114,9 @@ const status = await getStatus();
 
 // Listen to patch lifecycle events
 onPatchEvent("started", (payload) => { /* ... */ });
-onPatchEvent("plan-ready", (payload) => { /* ... */ });
-onPatchEvent("file-started", (payload) => { /* ... */ });
-onPatchEvent("file-progress", (payload) => { /* ... */ });
+onPatchEvent("plan-ready", (payload) => { /* files_to_download, bytes_to_download */ });
+onPatchEvent("file-started", (payload) => { /* file_index, file_total, file_size */ });
+onPatchEvent("file-progress", (payload) => { /* file and total byte progress */ });
 onPatchEvent("file-completed", (payload) => { /* ... */ });
 onPatchEvent("warning", (payload) => { /* ... */ });
 onPatchEvent("error", (payload) => { /* ... */ });

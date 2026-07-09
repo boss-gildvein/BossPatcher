@@ -5,7 +5,11 @@ use std::path::{Path, PathBuf};
 use std::process::Stdio;
 
 /// Resolve and validate an alias target.
-pub fn resolve_alias_target<P: AsRef<Path>>(launcher_dir: P, alias: &str, config: &Config) -> Result<PathBuf> {
+pub fn resolve_alias_target<P: AsRef<Path>>(
+    launcher_dir: P,
+    alias: &str,
+    config: &Config,
+) -> Result<PathBuf> {
     let target = config.calls.get(alias).ok_or_else(|| Error::UnknownAlias {
         alias: alias.to_string(),
     })?;
@@ -14,15 +18,21 @@ pub fn resolve_alias_target<P: AsRef<Path>>(launcher_dir: P, alias: &str, config
 }
 
 /// Spawn the configured executable by alias.
-pub async fn launch_alias<P: AsRef<Path>>(launcher_dir: P, alias: &str, config: &Config) -> Result<LaunchResult> {
+pub async fn launch_alias<P: AsRef<Path>>(
+    launcher_dir: P,
+    alias: &str,
+    config: &Config,
+) -> Result<LaunchResult> {
     let target = resolve_alias_target(launcher_dir.as_ref(), alias, config)?;
     if !tokio::fs::try_exists(&target).await.unwrap_or(false) {
         return Err(Error::TargetNotFound { path: target });
     }
-    let metadata = tokio::fs::metadata(&target).await.map_err(|e| Error::LocalFileReadFailed {
-        path: target.clone(),
-        reason: e.to_string(),
-    })?;
+    let metadata = tokio::fs::metadata(&target)
+        .await
+        .map_err(|e| Error::LocalFileReadFailed {
+            path: target.clone(),
+            reason: e.to_string(),
+        })?;
     if metadata.is_dir() {
         return Err(Error::TargetNotExecutable { path: target });
     }
@@ -68,5 +78,8 @@ pub struct LaunchResult {
 }
 
 fn is_executable_extension(ext: &str) -> bool {
-    matches!(ext.to_ascii_lowercase().as_str(), "exe" | "bat" | "cmd" | "com")
+    matches!(
+        ext.to_ascii_lowercase().as_str(),
+        "exe" | "bat" | "cmd" | "com"
+    )
 }

@@ -150,4 +150,4 @@ md5 = "9e107d9d372bb6826bd81d3542a419d6"
 
 ## License
 
-MIT OR Apache-2.0
+Proprietary — all rights reserved by Boss Gildvein.

@@ -45,6 +45,10 @@ pub async fn launch_alias<P: AsRef<Path>>(
             return Err(Error::TargetNotExecutable { path: target });
         }
     }
+    if config.call_options_for(alias).elevated {
+        return launch_elevated(launcher_dir.as_ref(), alias, &target);
+    }
+
     let mut cmd = tokio::process::Command::new(&target);
     cmd.current_dir(launcher_dir.as_ref())
         .stdin(Stdio::null())
@@ -66,6 +70,59 @@ pub async fn launch_alias<P: AsRef<Path>>(
         target: target.to_string_lossy().into_owned(),
         started: true,
         pid,
+    })
+}
+
+#[cfg(windows)]
+fn launch_elevated(launcher_dir: &Path, alias: &str, target: &Path) -> Result<LaunchResult> {
+    use std::ffi::OsStr;
+    use std::iter::once;
+    use std::os::windows::ffi::OsStrExt;
+    use std::ptr::null_mut;
+    use windows_sys::Win32::UI::Shell::ShellExecuteW;
+    use windows_sys::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
+
+    fn wide(value: &OsStr) -> Vec<u16> {
+        value.encode_wide().chain(once(0)).collect()
+    }
+
+    let operation = wide(OsStr::new("runas"));
+    let file = wide(target.as_os_str());
+    let directory = wide(launcher_dir.as_os_str());
+    let result = unsafe {
+        ShellExecuteW(
+            null_mut(),
+            operation.as_ptr(),
+            file.as_ptr(),
+            null_mut(),
+            directory.as_ptr(),
+            SW_SHOWNORMAL,
+        )
+    };
+
+    if (result as isize) <= 32 {
+        return Err(Error::ProcessStartFailed {
+            path: target.to_path_buf(),
+            reason: format!("ShellExecuteW runas failed with code {}", result as isize),
+        });
+    }
+
+    Ok(LaunchResult {
+        alias: alias.to_string(),
+        target: target.to_string_lossy().into_owned(),
+        started: true,
+        pid: None,
+    })
+}
+
+#[cfg(not(windows))]
+fn launch_elevated(launcher_dir: &Path, alias: &str, target: &Path) -> Result<LaunchResult> {
+    let _ = launcher_dir;
+    let _ = alias;
+    let _ = target;
+    Err(Error::ProcessStartFailed {
+        path: target.to_path_buf(),
+        reason: "elevated aliases are only supported on Windows".to_string(),
     })
 }
 

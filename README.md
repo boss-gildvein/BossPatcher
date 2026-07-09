@@ -53,6 +53,15 @@ data_url = "https://patch.example.com/data/"
 game = "Game.exe"
 setup = "Setup.exe"
 
+[call_options.game]
+# Windows only. Uses UAC elevation for this alias.
+elevated = false
+
+[window]
+width = 1280
+height = 800
+resizable = true
+
 [security]
 # Defaults to false. Use true only for local development fixtures.
 allow_http = false
@@ -75,6 +84,12 @@ hash_algorithm = "md5"
 | `data_url` | HTTPS base URL for patch file downloads |
 | `[calls]` | Alias → relative executable path map |
 
+### Optional call and window settings
+
+`[call_options.<alias>]` can tune a configured alias from `[calls]`. Set `elevated = true` on Windows to launch that alias with the `runas` shell verb, which shows a UAC prompt and starts the target elevated. Aliases without options default to `elevated = false`.
+
+`[window]` controls the launcher WebView window. `width` and `height` are inner window dimensions in pixels, and `resizable = false` locks the window size. If omitted, the launcher defaults to `1280x800` and remains resizable.
+
 ### Local HTTP opt-in
 
 Production configs must use HTTPS by default. For local manual testing, set:
@@ -89,6 +104,7 @@ When `allow_http = false` or the section is omitted, any HTTP `launcher_url`, `m
 ### Security rules enforced by Rust
 
 - Only aliases defined in `[calls]` can be launched. `call("game")` resolves to the configured path; raw paths from JavaScript are rejected.
+- Elevated aliases are opt-in per alias through `[call_options.<alias>]` and are only supported on Windows.
 - Aliases must be relative, must stay inside the launcher directory, and cannot contain `..`.
 - Only files listed in the remote manifest can be modified. Extra local files are never deleted.
 - The running launcher executable and its config TOML are protected and skipped with a warning if they appear in the manifest.

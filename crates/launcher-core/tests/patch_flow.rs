@@ -52,6 +52,8 @@ async fn integration_patch_flow() {
         manifest_url: format!("http://{}/manifest.toml", server.addr),
         data_url: format!("http://{}/data/", server.addr),
         calls: [("game".into(), "Game.exe".into())].into_iter().collect(),
+        call_options: Default::default(),
+        window: Default::default(),
         patch: PatchConfig::default(),
         security: SecurityConfig { allow_http: true },
     };

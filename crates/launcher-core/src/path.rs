@@ -70,8 +70,8 @@ pub fn check_path_for_traversal<P: AsRef<Path>>(path: P) -> Result<()> {
 /// Validate that a target stays inside base.
 pub fn canonicalize_within_base(base: &Path, target: &Path) -> Result<PathBuf> {
     // Use GetFullPathName-like behavior by normalizing within the base.
-    let base_abs = std::path::absolute(base).map_err(|e| Error::Io(e))?;
-    let target_abs = std::path::absolute(target).map_err(|e| Error::Io(e))?;
+    let base_abs = std::path::absolute(base).map_err(Error::Io)?;
+    let target_abs = std::path::absolute(target).map_err(Error::Io)?;
     if !target_abs.starts_with(&base_abs) {
         return Err(Error::ManifestInvalidPath {
             path: target.to_string_lossy().into_owned(),
@@ -103,13 +103,13 @@ pub fn validate_alias_target(alias: &str, target: &str) -> Result<()> {
     Ok(())
 }
 
-/// Encode manifest path segments into a URL path, preserving the manifest's
-/// forward-slash structure but URL-encoding characters that need it.
+/// Append a manifest path to a data URL base, URL-encoding each path segment.
+/// Skips trailing slash handling because the caller already supplies a base
+/// URL that ends with `/`.
 pub fn url_path_segment_for_data_url(data_url: &str, manifest_path: &str) -> Result<url::Url> {
     let base = url::Url::parse(data_url)?;
-    let mut result = base;
+    let mut result = base.clone();
     for seg in manifest_path.split('/') {
-        // Empty segment can occur for trailing slashes or empty path; skip.
         if seg.is_empty() {
             continue;
         }
@@ -117,7 +117,12 @@ pub fn url_path_segment_for_data_url(data_url: &str, manifest_path: &str) -> Res
             .join(&format!("{}/", urlencoding::encode(seg)))
             .map_err(|e| url::ParseError::from(e))?;
     }
-    Ok(result)
+    // Remove the trailing slash that join adds after the final segment.
+    let mut s = result.as_str().to_string();
+    if s.ends_with('/') {
+        s.pop();
+    }
+    Ok(url::Url::parse(&s)?)
 }
 
 #[cfg(not(target_os = "linux"))]
@@ -165,5 +170,18 @@ mod tests {
     fn validate_alias_target_rejects_absolute() {
         assert!(validate_alias_target("bad", "C:/Windows/cmd.exe").is_err());
         assert!(validate_alias_target("bad", "../bad.exe").is_err());
+    }
+
+    #[test]
+    fn url_path_segment_encoding() {
+        let url = url_path_segment_for_data_url(
+            "https://patch.example.com/data/",
+            "BGM/日本語/track 01.mp3",
+        )
+        .unwrap();
+        assert_eq!(
+            url.as_str(),
+            "https://patch.example.com/data/BGM/%E6%97%A5%E6%9C%AC%E8%AA%9E/track%2001.mp3"
+        );
     }
 }

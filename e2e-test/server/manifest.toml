@@ -1,0 +1,38 @@
+manifest_version = 1
+hash_algorithm = "md5"
+generated_at = "2026-07-09T05:39:31.965055400+00:00"
+
+[[files]]
+path = "BGM/日本語/track 01.mp3"
+size = 15
+md5 = "8c1c2ab50ffd722aeec6772068c06082"
+
+[[files]]
+path = "BossPatcher_e2e.exe"
+size = 21
+md5 = "f298ab2a57931186391585493e0e1b0f"
+
+[[files]]
+path = "BossPatcher_e2e.toml"
+size = 19
+md5 = "c8775caf0061407713282cc3f5a7cf30"
+
+[[files]]
+path = "data/client.grf"
+size = 24
+md5 = "67c5edbb74779dfdfae98d1ac811a92b"
+
+[[files]]
+path = "data/简体中文/说明.txt"
+size = 15
+md5 = "b71e18a6e9f7ed3a6a031a7c7f33577d"
+
+[[files]]
+path = "data/한국어/스프라이트.spr"
+size = 15
+md5 = "191c68084fb89308468d428f73420158"
+
+[[files]]
+path = "extra_remote.txt"
+size = 15
+md5 = "8de931c7ce7cdd5f963641ad5afda198"

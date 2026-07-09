@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>BossPatcher UI Stub</title>
+  <style>
+    body { font-family: system-ui, sans-serif; padding: 2rem; }
+    h1 { font-size: 1.5rem; }
+    .error { color: #c00; }
+  </style>
+</head>
+<body>
+  <h1>BossPatcher Frontend Contract</h1>
+  <p id="status">Loading...</p>
+  <div id="error" class="error"></div>
+  <script type="module" src="./api.js"></script>
+  <script type="module">
+    import { getStatus, onFatalError } from './api.js';
+    onFatalError((msg) => {
+      document.getElementById('error').textContent = msg;
+    });
+    getStatus().then((s) => {
+      document.getElementById('status').textContent = JSON.stringify(s, null, 2);
+    }).catch((e) => {
+      document.getElementById('error').textContent = String(e);
+    });
+  </script>
+</body>
+</html>

@@ -1,0 +1,14 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "main",
+  "description": "Core capabilities for the BossPatcher launcher webview",
+  "windows": ["main"],
+  "permissions": [
+    "core:default",
+    "shell:allow-open",
+    "log:default"
+  ],
+  "remote": {
+    "urls": ["https://*"]
+  }
+}

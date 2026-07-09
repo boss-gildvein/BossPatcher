@@ -1,0 +1,35 @@
+[workspace]
+members = ["crates/launcher-core", "crates/manifestgen", "src-tauri"]
+resolver = "2"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+authors = ["BossPatcher Contributors"]
+license = "MIT OR Apache-2.0"
+rust-version = "1.78"
+
+[workspace.dependencies]
+launcher-core = { path = "crates/launcher-core" }
+serde = { version = "1.0", features = ["derive"] }
+tokio = { version = "1.44", features = ["rt-multi-thread", "macros", "fs", "process", "sync", "time"] }
+thiserror = "2.0"
+anyhow = "1.0"
+toml = "0.8"
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "stream"] }
+futures-util = "0.3"
+md5 = "0.7"
+hex = "0.4"
+uuid = { version = "1.16", features = ["v4"] }
+chrono = { version = "0.4", default-features = false, features = ["now", "std"] }
+url = "2.5"
+tracing = "0.1"
+urlencoding = "2.1"
+clap = { version = "4.5", features = ["derive"] }
+tracing-subscriber = { version = "0.3", features = ["fmt"] }
+
+tauri = { version = "2.5", features = ["tray-icon"] }
+tauri-plugin-shell = "2.2"
+tauri-plugin-http = "2.4"
+tauri-plugin-log = "2.3"
+tauri-plugin-dialog = "2.2"

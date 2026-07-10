@@ -32,6 +32,7 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             commands::app_exit,
             commands::call_alias,
+            commands::cancel_patch,
             commands::patch_files,
             commands::get_status,
         ])

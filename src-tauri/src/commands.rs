@@ -87,6 +87,16 @@ pub async fn patch_files(
     }
 }
 
+#[tauri::command]
+pub async fn cancel_patch(app: tauri::AppHandle) -> Result<serde_json::Value, String> {
+    let state = app_state(&app);
+    if state.patcher.cancel() {
+        return Ok(serde_json::json!({"status": "cancelling"}));
+    }
+
+    Err("PATCH_NOT_RUNNING".to_string())
+}
+
 fn error_code(e: &launcher_core::Error) -> String {
     use launcher_core::Error::*;
     match e {

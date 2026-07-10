@@ -2,6 +2,7 @@ use crate::error::{Error, Result};
 use crate::hash::md5_file;
 use crate::path::{resolve_relative, url_path_segment_for_data_url};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 use tokio::fs::OpenOptions;
 use tokio::io::{AsyncWriteExt, BufWriter};
 
@@ -13,8 +14,13 @@ pub async fn download_file<P: AsRef<Path>>(
     manifest_path: &str,
     launcher_dir: P,
     expected_md5: &str,
+    cancel_requested: &AtomicBool,
     progress: &mut dyn DownloadProgress,
 ) -> Result<TempVerifiedFile> {
+    if cancel_requested.load(Ordering::SeqCst) {
+        return Err(Error::DownloadCancelled);
+    }
+
     let url = url_path_segment_for_data_url(data_url, manifest_path)?;
     let local_temp = temp_path_for(manifest_path, launcher_dir.as_ref())?;
     if let Some(parent) = local_temp.parent() {
@@ -56,6 +62,12 @@ pub async fn download_file<P: AsRef<Path>>(
         path: manifest_path.to_string(),
         reason: format!("chunk error: {}", e),
     })? {
+        if cancel_requested.load(Ordering::SeqCst) {
+            drop(writer);
+            let _ = tokio::fs::remove_file(&local_temp).await;
+            return Err(Error::DownloadCancelled);
+        }
+
         writer
             .write_all(&chunk)
             .await

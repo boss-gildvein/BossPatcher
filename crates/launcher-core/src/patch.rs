@@ -10,6 +10,7 @@ use tokio::sync::Mutex;
 
 pub struct Patcher {
     running: AtomicBool,
+    cancel_requested: AtomicBool,
     client: reqwest::Client,
 }
 
@@ -23,12 +24,22 @@ impl Patcher {
     pub fn new() -> Self {
         Self {
             running: AtomicBool::new(false),
+            cancel_requested: AtomicBool::new(false),
             client: reqwest::Client::new(),
         }
     }
 
     pub fn is_running(&self) -> bool {
         self.running.load(Ordering::SeqCst)
+    }
+
+    pub fn cancel(&self) -> bool {
+        if !self.is_running() {
+            return false;
+        }
+
+        self.cancel_requested.store(true, Ordering::SeqCst);
+        true
     }
 
     pub async fn run<P: AsRef<Path>>(
@@ -50,6 +61,7 @@ impl Patcher {
         {
             return Err(Error::PatchAlreadyRunning);
         }
+        self.cancel_requested.store(false, Ordering::SeqCst);
         let _guard = scopeguard::guard(&self.running, |r| r.store(false, Ordering::SeqCst));
 
         emitter.lock().await.emit_started();
@@ -103,6 +115,10 @@ impl Patcher {
         let mut bytes_downloaded: u64 = 0;
         let total_files = plan.items.len();
         for (index, item) in plan.items.iter().enumerate() {
+            if self.cancel_requested.load(Ordering::SeqCst) {
+                return Err(Error::DownloadCancelled);
+            }
+
             let manifest_entry = entries
                 .iter()
                 .find(|e| e.path == item.path)
@@ -156,11 +172,17 @@ impl Patcher {
                 &item.path,
                 launcher_dir,
                 &manifest_entry.md5,
+                &self.cancel_requested,
                 &mut progress_sender,
             )
             .await?;
             drop(progress_sender);
             let final_total = progress_handle.1.await.unwrap_or(bytes_downloaded);
+
+            if self.cancel_requested.load(Ordering::SeqCst) {
+                let _ = tokio::fs::remove_file(&temp.temp_path).await;
+                return Err(Error::DownloadCancelled);
+            }
 
             replace_with_temp(temp, launcher_dir).await?;
             bytes_downloaded = final_total;

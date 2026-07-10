@@ -3,6 +3,7 @@ fn main() {
         tauri_build::AppManifest::new().commands(&[
             "app_exit",
             "call_alias",
+            "cancel_patch",
             "get_status",
             "patch_files",
         ]),

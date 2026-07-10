@@ -67,7 +67,6 @@ pub async fn download_file<P: AsRef<Path>>(
             let _ = tokio::fs::remove_file(&local_temp).await;
             return Err(Error::DownloadCancelled);
         }
-
         writer
             .write_all(&chunk)
             .await

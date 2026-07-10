@@ -184,7 +184,6 @@ async fn integration_patch_flow_can_be_cancelled_mid_download() {
     let error = task.await.unwrap().expect_err("patch should cancel");
     assert!(matches!(error, launcher_core::Error::DownloadCancelled));
 }
-
 #[derive(Default)]
 struct CollectingEmitter {
     warnings: Vec<String>,

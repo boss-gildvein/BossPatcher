@@ -1,4 +1,4 @@
-use http_body_util::Full;
+use http_body_util::{BodyExt, Full};
 use hyper::body::Bytes;
 use hyper::server::conn::http1;
 use hyper::service::service_fn;
@@ -12,6 +12,7 @@ use launcher_core::patch::{
 use std::convert::Infallible;
 use std::net::SocketAddr;
 use std::sync::Arc;
+use std::time::Duration;
 use tokio::net::TcpListener;
 use tokio::sync::Mutex;
 
@@ -121,6 +122,68 @@ async fn integration_patch_flow() {
     assert_eq!(warnings.len(), 2, "expected 2 protected-file warnings");
 }
 
+#[tokio::test]
+async fn integration_patch_flow_can_be_cancelled_mid_download() {
+    let test_files = vec![RemoteFile {
+        path: "data/client.grf".into(),
+        contents: vec![b'x'; 512 * 1024],
+    }];
+    let manifest = build_manifest(&test_files).await;
+
+    let server = TestServer::start_slow(test_files, manifest, Duration::from_millis(250)).await;
+
+    let base = tempfile::tempdir().unwrap();
+    let launcher_dir = base.path().join("launcher");
+    let exe_path = launcher_dir.join("BossPatcher_test.exe");
+    let config_path = launcher_dir.join("BossPatcher_test.toml");
+
+    tokio::fs::create_dir_all(&launcher_dir).await.unwrap();
+    tokio::fs::write(&exe_path, b"launcher stub").await.unwrap();
+    tokio::fs::write(&config_path, b"config stub").await.unwrap();
+
+    let config = Config {
+        config_version: 1,
+        title: "Integration".into(),
+        launcher_url: format!("http://{}/", server.addr),
+        manifest_url: format!("http://{}/manifest.toml", server.addr),
+        data_url: format!("http://{}/data/", server.addr),
+        calls: [("game".into(), "Game.exe".into())].into_iter().collect(),
+        call_options: Default::default(),
+        window: Default::default(),
+        patch: PatchConfig::default(),
+        security: SecurityConfig { allow_http: true },
+    };
+
+    let emitter: Arc<Mutex<CollectingEmitter>> = Arc::new(Mutex::new(CollectingEmitter::default()));
+    let patcher = Arc::new(Patcher::new());
+    let patcher_for_task = patcher.clone();
+    let emitter_for_task = emitter.clone();
+
+    let task = tokio::spawn(async move {
+        patcher_for_task
+            .run(
+                &launcher_dir,
+                &exe_path,
+                &config_path,
+                &config,
+                emitter_for_task,
+            )
+            .await
+    });
+
+    tokio::time::timeout(Duration::from_secs(1), async {
+        while !patcher.is_running() {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .expect("patcher should start running");
+
+    assert!(patcher.cancel(), "cancel should be accepted while patching");
+
+    let error = task.await.unwrap().expect_err("patch should cancel");
+    assert!(matches!(error, launcher_core::Error::DownloadCancelled));
+}
 #[derive(Default)]
 struct CollectingEmitter {
     warnings: Vec<String>,
@@ -215,6 +278,18 @@ struct TestServer {
 
 impl TestServer {
     async fn start(files: Vec<RemoteFile>, manifest: String) -> Self {
+        Self::start_with_chunk_delay(files, manifest, None).await
+    }
+
+    async fn start_slow(files: Vec<RemoteFile>, manifest: String, chunk_delay: Duration) -> Self {
+        Self::start_with_chunk_delay(files, manifest, Some(chunk_delay)).await
+    }
+
+    async fn start_with_chunk_delay(
+        files: Vec<RemoteFile>,
+        manifest: String,
+        chunk_delay: Option<Duration>,
+    ) -> Self {
         let files = Arc::new(files);
         let manifest = Arc::new(manifest);
 
@@ -231,9 +306,10 @@ impl TestServer {
                 };
                 let files = files_clone.clone();
                 let manifest = manifest_clone.clone();
+                let chunk_delay = chunk_delay;
                 tokio::spawn(async move {
                     let service =
-                        service_fn(move |req| handle_request(req, files.clone(), manifest.clone()));
+                        service_fn(move |req| handle_request(req, files.clone(), manifest.clone(), chunk_delay));
                     let _ = http1::Builder::new()
                         .serve_connection(hyper_util::rt::TokioIo::new(stream), service)
                         .await;
@@ -253,7 +329,8 @@ async fn handle_request(
     req: Request<hyper::body::Incoming>,
     files: Arc<Vec<RemoteFile>>,
     manifest: Arc<String>,
-) -> Result<Response<Full<Bytes>>, Infallible> {
+    chunk_delay: Option<Duration>,
+) -> Result<Response<http_body_util::combinators::BoxBody<Bytes, Infallible>>, Infallible> {
     let path = urlencoding::decode(req.uri().path())
         .unwrap_or_else(|_| req.uri().path().into())
         .into_owned();
@@ -262,21 +339,38 @@ async fn handle_request(
         return Ok(Response::builder()
             .status(StatusCode::OK)
             .header("content-type", "text/toml")
-            .body(Full::new(Bytes::copy_from_slice(manifest.as_bytes())))
+            .body(Full::new(Bytes::copy_from_slice(manifest.as_bytes())).boxed())
             .unwrap());
     }
     let prefix = "data/";
     if let Some(rel) = path.strip_prefix(prefix) {
         if let Some(file) = files.iter().find(|f| f.path == rel) {
+            if let Some(delay) = chunk_delay {
+                let midpoint = (file.contents.len() / 2).max(1);
+                let first = Bytes::copy_from_slice(&file.contents[..midpoint]);
+                let second = Bytes::copy_from_slice(&file.contents[midpoint..]);
+                let stream = async_stream::stream! {
+                    yield Ok::<_, Infallible>(hyper::body::Frame::data(first));
+                    tokio::time::sleep(delay).await;
+                    yield Ok::<_, Infallible>(hyper::body::Frame::data(second));
+                };
+                let body = http_body_util::StreamBody::new(stream);
+                return Ok(Response::builder()
+                    .status(StatusCode::OK)
+                    .header("content-type", "application/octet-stream")
+                    .body(body.boxed())
+                    .unwrap());
+            }
+
             return Ok(Response::builder()
                 .status(StatusCode::OK)
                 .header("content-type", "application/octet-stream")
-                .body(Full::new(Bytes::copy_from_slice(&file.contents)))
+                .body(Full::new(Bytes::copy_from_slice(&file.contents)).boxed())
                 .unwrap());
         }
     }
     Ok(Response::builder()
         .status(StatusCode::NOT_FOUND)
-        .body(Full::new(Bytes::new()))
+        .body(Full::new(Bytes::new()).boxed())
         .unwrap())
 }

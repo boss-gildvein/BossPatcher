@@ -9,6 +9,7 @@
     "log:default",
     "allow-app-exit",
     "allow-call-alias",
+    "allow-cancel-patch",
     "allow-get-status",
     "allow-patch-files"
   ],
